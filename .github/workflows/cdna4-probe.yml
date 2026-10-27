@@ -10,6 +10,20 @@ permissions:
   contents: read
 
 jobs:
+  code-style:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      - name: Ruff check changed emulator paths
+        run: >-
+          uvx ruff@0.16.4 check
+          test/mockgpu/amd/emu.py test/amd/test_emu_memory.py
+          test/device/amd/test_asm_gemm.py test/runtime/test_kernel_opts.py
+
   grouped-reduce:
     strategy:
       fail-fast: false
