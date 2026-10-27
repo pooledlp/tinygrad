@@ -77,10 +77,8 @@ class TestAsmGEMM(unittest.TestCase):
     if not is_cdna4() or not has_hipcc():
       self.skipTest("assembly gemm is only for cdna4")
 
-  @unittest.skipIf(DEV.interface.startswith("MOCK"), "emulator does not support DS_READ_B64_TR_B16")
   def test_tiny(self): verify_asm_gemm(1, 256, 256, 256)
 
-  @unittest.skipIf(DEV.interface.startswith("MOCK"), "emulator does not support DS_READ_B64_TR_B16")
   def test_verify_with_numpy(self):
     import numpy as np
     M, N, K = 256, 256, 256
