@@ -2034,6 +2034,10 @@ def run_asm(lib: int, lib_sz: int, gx: int, gy: int, gz: int, lx: int, ly: int, 
       scratch_base = scratch_buf._buf + (wave_start // wave_size) * scratch_size * wave_size if scratch_buf else 0
       waves.append((st, [st.sgpr_buf._buf, st.vgpr_buf._buf, vmem_buf._buf, lds_buf._buf, scratch_base if scratch_buf else 0, st.accvgpr_buf._buf]))
     done = [False] * len(waves)
+    # CDNA4 LDS transpose loads retire asynchronously: their VGPR/ACCVGPR results
+    # become visible on s_waitcnt, not when the instruction issues. The compiler
+    # can therefore reuse an address register as the destination of an earlier load.
+    pending_transpose: list[list[tuple[int, bytes]]] = [[] for _ in waves]
     for _ in range(10_000_000):
       if all(done): return
       for wi, (st, c_bufs) in enumerate(waves):
@@ -2047,7 +2051,32 @@ def run_asm(lib: int, lib_sz: int, gx: int, gy: int, gz: int, lx: int, ly: int, 
             break
           fxn, globals_list, is_barrier, inst = _ensure_compiled(pc)
           if DEBUG >= 5: print(f"  exec gid=({gidx},{gidy},{gidz}) w={wi} PC={pc - lib}: {inst!r}", flush=True)
-          fxn((ctypes.c_uint64 * len(globals_list))(*[c_bufs[g] for g in globals_list]))
+          if isinstance(inst, irc.SOPP) and inst.op == irc.SOPPOp.S_WAITCNT:
+            # LGKMcnt is bits 8..11 of the waitcnt immediate. Retire the oldest
+            # LDS transpose reads until no more than the requested count remain.
+            outstanding = (ctypes.c_uint16.from_address(pc).value >> 8) & 15
+            while len(pending_transpose[wi]) > outstanding:
+              dest, data = pending_transpose[wi].pop(0)
+              ctypes.memmove(dest, data, len(data))
+          elif isinstance(inst, irc.SOPP) and inst.op == irc.SOPPOp.S_ENDPGM:
+            for dest, data in pending_transpose[wi]: ctypes.memmove(dest, data, len(data))
+            pending_transpose[wi].clear()
+          if isinstance(inst, irc.DS) and inst.op == irc.DSOp.DS_READ_B64_TR_B16:
+            # Execute with a snapshot of the destination register bank, capturing
+            # the result without prematurely overwriting an in-flight address VGPR.
+            encoded = ctypes.c_uint64.from_address(pc).value
+            dest_reg, dest_bank = (encoded >> 56) & 255, 5 if (encoded >> 25) & 1 else 1
+            bank_size = 256 * wave_size * 4
+            staged = ctypes.create_string_buffer(bank_size)
+            ctypes.memmove(staged, c_bufs[dest_bank], bank_size)
+            shadow = c_bufs.copy()
+            shadow[dest_bank] = ctypes.addressof(staged)
+            fxn((ctypes.c_uint64 * len(globals_list))(*[shadow[g] for g in globals_list]))
+            dest = c_bufs[dest_bank] + dest_reg * wave_size * 4
+            data = ctypes.string_at(ctypes.addressof(staged) + dest_reg * wave_size * 4, wave_size * 8)
+            pending_transpose[wi].append((dest, data))
+          else:
+            fxn((ctypes.c_uint64 * len(globals_list))(*[c_bufs[g] for g in globals_list]))
           if tracing:
             inst_op = inst.op.value if hasattr(inst, 'op') else 0
             sqtt_emit(wi, inst, (st.pc != ENDPGM_PC and st.pc != pc + inst.size()) if inst_op in _BRANCH_OPS else None)
