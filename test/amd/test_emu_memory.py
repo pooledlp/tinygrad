@@ -138,4 +138,32 @@ class TestDSCDNA(unittest.TestCase):
     for offset, acc in ((0, 0), (24, 0), (24, 1)):
       with self.subTest(offset=offset, acc=acc): self._check_ds_read_b64_tr_b16(offset, acc)
 
+  def test_ds_read_b64_tr_b16_address_overlap(self):
+    # Transpose reads complete asynchronously. Before s_waitcnt, a destination
+    # VGPR still holds the address needed by a subsequent transpose read.
+    out = (ctypes.c_uint32 * 128)()
+    instructions = [
+      rc.v_lshlrev_b32_e32(rc.v[1], 3, rc.v[0]),
+      rc.v_lshlrev_b32_e32(rc.v[2], 3, rc.v[0]),
+      rc.v_mov_b32_e32(rc.v[6], 0x11112222),
+      rc.v_mov_b32_e32(rc.v[7], 0x33334444),
+      rc.ds_write_b64(addr=rc.v[1], data0=rc.v[6:7]),
+      rc.s_waitcnt(0),
+      rc.ds_read_b64_tr_b16(vdst=rc.v[2:3], addr=rc.v[1]),
+      rc.ds_read_b64_tr_b16(vdst=rc.v[4:5], addr=rc.v[2]),
+      rc.s_waitcnt(0),
+      rc.v_mov_b32_e32(rc.v[10], rc.s[0]),
+      rc.v_mov_b32_e32(rc.v[11], rc.s[1]),
+      rc.v_add_u32_e32(rc.v[10], rc.v[1], rc.v[10]),
+      rc.global_store_dwordx2(addr=rc.v[10:11], data=rc.v[4:5], saddr=rc.NULL),
+      rc.s_endpgm(),
+    ]
+    code = b''.join(inst.to_bytes() for inst in instructions)
+    kernel = ctypes.create_string_buffer(code)
+    self.assertEqual(run_asm(ctypes.addressof(kernel), len(code), 1, 1, 1, 64, 1, 1, ctypes.addressof(out),
+                             rsrc2=0x19c | (1 << 15), arch='cdna'), 0)
+    values = (0x22222222, 0x11111111, 0x44444444, 0x33333333)
+    for lane in range(64):
+      self.assertEqual(list(out[2*lane:2*lane+2]), [values[lane % 4]] * 2)
+
 if __name__ == '__main__': unittest.main()
