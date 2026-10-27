@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - bounty/cdna4-emulator-ci
+    paths:
+      - 'test/**'
+      - 'tinygrad/**'
+      - 'extra/**'
+      - '.github/workflows/cdna4-bounty-check.yml'
   workflow_dispatch:
 
 permissions:
