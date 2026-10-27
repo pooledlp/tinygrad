@@ -54,6 +54,7 @@ jobs:
       PYTHONPATH: .
       OMP_NUM_THREADS: 1
       PYTHONFAULTHANDLER: 1
+      DEBUG: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v6
