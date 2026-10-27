@@ -35,11 +35,12 @@ jobs:
           python - <<'PY'
           import unittest, inspect
           from test.runtime.test_kernel_opts import TestKernelOpts
+          # The fork intentionally enables this test on gfx950 already; execute it unmodified.
           test = TestKernelOpts.test_local_and_grouped_reduce
-          assert getattr(test, '__unittest_skip__', False), 'Expected skip has changed; inspect current test'
-          raw = inspect.unwrap(test)
-          raw.__unittest_skip__ = False
-          TestKernelOpts.test_local_and_grouped_reduce = raw
+          if getattr(test, '__unittest_skip__', False):
+            raw = inspect.unwrap(test)
+            raw.__unittest_skip__ = False
+            TestKernelOpts.test_local_and_grouped_reduce = raw
           suite = unittest.TestSuite([TestKernelOpts('test_local_and_grouped_reduce')])
           r = unittest.TextTestRunner(verbosity=2).run(suite)
           if not r.wasSuccessful() or r.testsRun != 1 or len(r.skipped) != 0: raise SystemExit(1)
@@ -66,8 +67,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends hipcc hip-dev
+          export PATH="/opt/rocm/bin:$PATH"
           command -v hipcc
           hipcc --version
+          echo "/opt/rocm/bin" >> "$GITHUB_PATH"
       - name: Run original GEMM correctness tests with emulator skip lifted
         run: |
           python - <<'PY'
