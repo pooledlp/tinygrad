@@ -44,3 +44,39 @@ jobs:
           r = unittest.TextTestRunner(verbosity=2).run(suite)
           if not r.wasSuccessful() or r.testsRun != 1 or len(r.skipped) != 0: raise SystemExit(1)
           PY
+
+  asm-gemm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DEV: MOCKKFD+AMD:LLVM:gfx950
+      PYTHONPATH: .
+      OMP_NUM_THREADS: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup emulator
+        uses: ./.github/actions/setup-tinygrad
+        with:
+          key: amdllvm-minimal
+          deps: testing_unit
+          amd: 'true'
+          llvm: 'true'
+      - name: Install ROCm HIP compiler for actual assembly tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends hipcc hip-dev
+          command -v hipcc
+          hipcc --version
+      - name: Run original GEMM correctness tests with emulator skip lifted
+        run: |
+          python - <<'PY'
+          import unittest
+          from test.device.amd.test_asm_gemm import TestAsmGEMM
+          names = ('test_tiny', 'test_verify_with_numpy')
+          # Diagnostic only: lift the emulator-only @skipIf; no changes to test code or assertions.
+          for name in names: getattr(TestAsmGEMM, name).__unittest_skip__ = False
+          result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(TestAsmGEMM(name) for name in names))
+          if not result.wasSuccessful() or result.testsRun != len(names) or result.skipped:
+            raise SystemExit(1)
+          PY
