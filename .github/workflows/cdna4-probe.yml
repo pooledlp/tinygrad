@@ -76,19 +76,13 @@ jobs:
           command -v hipcc
           hipcc --version
           echo "/opt/rocm/bin" >> "$GITHUB_PATH"
-      - name: Run original GEMM correctness tests with emulator skip lifted
+      - name: Run unmodified CDNA4 GEMM correctness tests (no skips permitted)
         run: |
           ulimit -c 0
           python -X faulthandler - <<'PY'
-          import unittest, inspect
+          import unittest
           from test.device.amd.test_asm_gemm import TestAsmGEMM
           names = ('test_tiny', 'test_verify_with_numpy')
-          # unittest.skipIf wraps the function with a SkipTest-raising wrapper.
-          # Run the actual original body, preserving its assertions and setUp checks.
-          for name in names:
-            original = inspect.unwrap(getattr(TestAsmGEMM, name))
-            assert original.__name__ == name
-            setattr(TestAsmGEMM, name, original)
           result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(TestAsmGEMM(name) for name in names))
           if not result.wasSuccessful() or result.testsRun != len(names) or result.skipped:
             raise SystemExit(1)
