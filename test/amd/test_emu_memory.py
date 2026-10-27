@@ -84,6 +84,25 @@ class TestDSCDNA(unittest.TestCase):
           expected = [v if acc else v ^ 0xFFFFFFFF for v in values[:width*count//32]]
           self.assertEqual(list(mem), expected + [0xDEADBEEF] * (4-len(expected)))
 
+  def test_cdna_lds_above_64k(self):
+    # CDNA4 supports more than RDNA's 64 KiB of LDS; this access is beyond
+    # the old emulator PARAM bound even though the LDS allocation is large enough.
+    out = (ctypes.c_uint32 * 1)(0)
+    ptr = ctypes.addressof(out)
+    instructions = [
+      rc.v_mov_b32_e32(rc.v[0], ptr & 0xFFFFFFFF), rc.v_mov_b32_e32(rc.v[1], ptr >> 32),
+      rc.v_mov_b32_e32(rc.v[2], 65536), rc.v_mov_b32_e32(rc.v[4], 0x12345678),
+      rc.ds_write_b32(addr=rc.v[2], data0=rc.v[4]),
+      rc.ds_read_b32(vdst=rc.v[8], addr=rc.v[2]),
+      rc.global_store_dword(addr=rc.v[0:1], data=rc.v[8], saddr=rc.NULL),
+      rc.s_endpgm(),
+    ]
+    code = b''.join(inst.to_bytes() for inst in instructions)
+    kernel = ctypes.create_string_buffer(code)
+    self.assertEqual(run_asm(ctypes.addressof(kernel), len(code), 1, 1, 1, 1, 1, 1, ptr,
+                             rsrc2=0x19c | (129 << 15), arch='cdna'), 0)
+    self.assertEqual(out[0], 0x12345678)
+
   def _check_ds_read_b64_tr_b16(self, offset: int, acc: int):
     # CDNA4 transposes 16 source lanes (4 fp16 words each) into 16 destination
     # lanes (4 values from distinct rows). Check all 64 lanes and both VGPRs.
