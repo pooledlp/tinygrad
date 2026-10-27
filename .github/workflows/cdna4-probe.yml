@@ -47,21 +47,24 @@ jobs:
           PY
 
   asm-gemm:
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [amd, amdllvm]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      DEV: MOCKKFD+AMD:LLVM:gfx950
+      DEV: ${{ matrix.backend == 'amdllvm' && 'MOCKKFD+AMD:LLVM:gfx950' || 'MOCKKFD+AMD::gfx950' }}
       PYTHONPATH: .
       OMP_NUM_THREADS: 1
       PYTHONFAULTHANDLER: 1
-      DEBUG: 0
     steps:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Setup emulator
         uses: ./.github/actions/setup-tinygrad
         with:
-          key: amdllvm-minimal
+          key: ${{ matrix.backend }}-minimal
           deps: testing_unit
           amd: 'true'
           llvm: 'true'
@@ -73,39 +76,6 @@ jobs:
           command -v hipcc
           hipcc --version
           echo "/opt/rocm/bin" >> "$GITHUB_PATH"
-      - name: Instrument native emulator call site (diagnostic job only)
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path = Path("test/mockgpu/amd/emu.py")
-          src = path.read_text()
-          needle = "          fxn((ctypes.c_uint64 * len(globals_list))(*[c_bufs[g] for g in globals_list]))"
-          assert src.count(needle) == 1
-          added = "\n".join([
-            "          if gidx == gidy == gidz == 0 and 4650 <= pc - lib <= 6200:",
-            "            import sys",
-            "            print(f'[TRACE] wave={wi} pc={pc-lib} {inst!r}', file=sys.stderr, flush=True)",
-            "            if wi == 0 and pc-lib in (5164,5172):",
-            "              inst_raw = int.from_bytes(ctypes.string_at(pc,8),'little')",
-            "              regnum = (inst_raw >> 32) & 255",
-            "              vg = (ctypes.c_uint32 * (256*wave_size)).from_address(st.vgpr_buf._buf)",
-            "              ac = (ctypes.c_uint32 * (256*wave_size)).from_address(st.accvgpr_buf._buf)",
-            "              print(f'[RAW] pc={pc-lib} word={inst_raw:#018x} accflag={(inst_raw >> 25)&1} reg=v{regnum} addr0={vg[regnum*wave_size]:#x} vg192={vg[192*wave_size]:#x} acc192={ac[192*wave_size]:#x}', file=sys.stderr, flush=True)",
-            "          if isinstance(inst, irc.DS) and _op_name(inst) == 'DS_READ_B64_TR_B16':",
-            "            raw = int.from_bytes(ctypes.string_at(pc, 8), 'little')",
-            "            addr_reg, offset = (raw >> 32) & 255, raw & 65535",
-            "            vgpr = (ctypes.c_uint32 * (256 * wave_size)).from_address(st.vgpr_buf._buf)",
-            "            for lane in range(wave_size):",
-            "              src_base = (lane & -16) + ((lane & 15) >> 2)",
-            "              for row in range(4):",
-            "                src_lane = src_base + row * 4",
-            "                addr = (vgpr[addr_reg * wave_size + src_lane] + offset + (lane & 3) * 2) & 0xffffffff",
-            "                if addr + 2 > lds_size:",
-            "                  raise RuntimeError(f'CDNA4 transpose OOB wave={wi} pc={pc-lib} addr_reg=v{addr_reg} source_lane={src_lane} dest_lane={lane} addr={addr} offset={offset} lds_size={lds_size}')",
-          ]) + "\n"
-          src = src.replace(needle, added + needle)
-          path.write_text(src)
-          PY
       - name: Run original GEMM correctness tests with emulator skip lifted
         run: |
           ulimit -c 0
