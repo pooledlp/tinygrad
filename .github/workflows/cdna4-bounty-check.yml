@@ -1,0 +1,45 @@
+name: CDNA4 bounty validation (fork only)
+
+on:
+  push:
+    branches:
+      - bounty/cdna4-emulator-ci
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gfx950:
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [amd, amdllvm]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DEV: ${{ matrix.backend == 'amdllvm' && 'MOCKKFD+AMD:LLVM:gfx950' || 'MOCKKFD+AMD::gfx950' }}
+      SKIP_SLOW_TEST: 1
+      PYTHONPATH: .
+    steps:
+      - name: Checkout fork branch
+        uses: actions/checkout@v6
+      - name: Set up emulator dependencies
+        uses: ./.github/actions/setup-tinygrad
+        with:
+          key: ${{ matrix.backend }}-minimal
+          deps: testing_unit
+          amd: 'true'
+          llvm: 'true'
+      - name: Validate gfx950 emulator test suite and report skips
+        run: >-
+          python -m pytest -n=auto -ra
+          test/runtime/test_ops.py test/runtime/test_dtype.py test/runtime/test_dtype_alu.py
+          test/runtime/test_kernel_opts.py test/runtime/test_linearizer.py test/runtime/test_randomness.py
+          test/runtime/test_jit.py test/runtime/test_multitensor.py test/runtime/test_search.py
+          test/runtime/test_tensor_cores.py test/null/test_hcq2.py test/runtime/test_hcq2.py
+          test/external/external_test_am.py test/device/amd
+          test/runtime/test_disk_tensor.py::TestDiskTensor::test_copy_from_disk
+          test/runtime/test_disk_tensor.py::TestDiskTensor::test_copy_from_disk_offset
+          test/runtime/test_disk_tensor.py::TestDiskTensor::test_copy_from_disk_huge
+          --durations=20
