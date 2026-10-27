@@ -100,12 +100,12 @@ class TestDSCDNA(unittest.TestCase):
       rc.v_or_b32_e32(rc.v[7], rc.v[4], rc.v[7]),
       rc.ds_write_b64(addr=rc.v[1], data0=rc.v[6:7], offset0=offset),
       rc.ds_read_b64_tr_b16(vdst=rc.v[8:9], addr=rc.v[1], offset0=offset, acc=acc),
+      *([rc.v_accvgpr_read(rc.v[8], rc.v[8]), rc.v_accvgpr_read(rc.v[9], rc.v[9])] if acc else []),
       rc.v_mov_b32_e32(rc.v[10], rc.s[0]), rc.v_mov_b32_e32(rc.v[11], rc.s[1]),
       rc.v_add_u32_e32(rc.v[10], rc.v[1], rc.v[10]),
       rc.global_store_dwordx2(addr=rc.v[10:11], data=rc.v[8:9], saddr=rc.NULL),
       rc.s_endpgm(),
     ]
-    if acc: instructions += [rc.v_accvgpr_read(rc.v[8], rc.v[8]), rc.v_accvgpr_read(rc.v[9], rc.v[9])]
     code = b''.join(inst.to_bytes() for inst in instructions)
     kernel = ctypes.create_string_buffer(code)
     self.assertEqual(run_asm(ctypes.addressof(kernel), len(code), 1, 1, 1, 64, 1, 1, ctypes.addressof(out),
