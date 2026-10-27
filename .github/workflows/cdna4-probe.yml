@@ -1,0 +1,44 @@
+name: Probe CDNA4 grouped-reduce skip (fork only)
+
+on:
+  push:
+    branches: [bounty/cdna4-emulator-ci]
+    paths: ['.github/workflows/cdna4-probe.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  grouped-reduce:
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [amd, amdllvm]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DEV: ${{ matrix.backend == 'amdllvm' && 'MOCKKFD+AMD:LLVM:gfx950' || 'MOCKKFD+AMD::gfx950' }}
+      PYTHONPATH: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup
+        uses: ./.github/actions/setup-tinygrad
+        with:
+          key: ${{ matrix.backend }}-minimal
+          deps: testing_unit
+          amd: 'true'
+          llvm: 'true'
+      - name: Probe previously skipped grouped reduce without editing tests
+        run: |
+          python - <<'PY'
+          import unittest
+          from test.runtime.test_kernel_opts import TestKernelOpts
+          test = TestKernelOpts.test_local_and_grouped_reduce
+          assert getattr(test, '__unittest_skip__', False), 'Expected skip has changed; inspect current test'
+          test.__unittest_skip__ = False
+          suite = unittest.TestSuite([TestKernelOpts('test_local_and_grouped_reduce')])
+          r = unittest.TextTestRunner(verbosity=2).run(suite)
+          if not r.wasSuccessful() or r.testsRun != 1 or len(r.skipped) != 0: raise SystemExit(1)
+          PY
