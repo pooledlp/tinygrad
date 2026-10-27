@@ -33,11 +33,13 @@ jobs:
       - name: Probe previously skipped grouped reduce without editing tests
         run: |
           python - <<'PY'
-          import unittest
+          import unittest, inspect
           from test.runtime.test_kernel_opts import TestKernelOpts
           test = TestKernelOpts.test_local_and_grouped_reduce
           assert getattr(test, '__unittest_skip__', False), 'Expected skip has changed; inspect current test'
-          test.__unittest_skip__ = False
+          raw = inspect.unwrap(test)
+          raw.__unittest_skip__ = False
+          TestKernelOpts.test_local_and_grouped_reduce = raw
           suite = unittest.TestSuite([TestKernelOpts('test_local_and_grouped_reduce')])
           r = unittest.TextTestRunner(verbosity=2).run(suite)
           if not r.wasSuccessful() or r.testsRun != 1 or len(r.skipped) != 0: raise SystemExit(1)
