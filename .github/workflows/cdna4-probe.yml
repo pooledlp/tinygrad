@@ -81,24 +81,22 @@ jobs:
           src = path.read_text()
           needle = "          fxn((ctypes.c_uint64 * len(globals_list))(*[c_bufs[g] for g in globals_list]))"
           assert src.count(needle) == 1
-          added = """
-          if gidx == gidy == gidz == 0 and 4650 <= pc - lib <= 6200:
-            import sys
-            print(f'[TRACE] wave={wi} pc={pc-lib} {inst!r}', file=sys.stderr, flush=True)
-          if isinstance(inst, irc.DS) and _op_name(inst) == 'DS_READ_B64_TR_B16':
-            # Diagnostic only: fail safely and report an out-of-range LDS address
-            # rather than letting generated native code dereference invalid memory.
-            raw = int.from_bytes(ctypes.string_at(pc, 8), 'little')
-            addr_reg, offset = (raw >> 32) & 255, raw & 65535
-            vgpr = (ctypes.c_uint32 * (256 * wave_size)).from_address(st.vgpr_buf._buf)
-            for lane in range(wave_size):
-              src_base = (lane & -16) + ((lane & 15) >> 2)
-              for row in range(4):
-                src_lane = src_base + row * 4
-                addr = (vgpr[addr_reg * wave_size + src_lane] + offset + (lane & 3) * 2) & 0xffffffff
-                if addr + 2 > lds_size:
-                  raise RuntimeError(f'CDNA4 transpose OOB at wave={wi} pc={pc-lib} addr_reg=v{addr_reg} source_lane={src_lane} dest_lane={lane} addr={addr} offset={offset} lds_size={lds_size}')
-"""
+          added = "\n".join([
+            "          if gidx == gidy == gidz == 0 and 4650 <= pc - lib <= 6200:",
+            "            import sys",
+            "            print(f'[TRACE] wave={wi} pc={pc-lib} {inst!r}', file=sys.stderr, flush=True)",
+            "          if isinstance(inst, irc.DS) and _op_name(inst) == 'DS_READ_B64_TR_B16':",
+            "            raw = int.from_bytes(ctypes.string_at(pc, 8), 'little')",
+            "            addr_reg, offset = (raw >> 32) & 255, raw & 65535",
+            "            vgpr = (ctypes.c_uint32 * (256 * wave_size)).from_address(st.vgpr_buf._buf)",
+            "            for lane in range(wave_size):",
+            "              src_base = (lane & -16) + ((lane & 15) >> 2)",
+            "              for row in range(4):",
+            "                src_lane = src_base + row * 4",
+            "                addr = (vgpr[addr_reg * wave_size + src_lane] + offset + (lane & 3) * 2) & 0xffffffff",
+            "                if addr + 2 > lds_size:",
+            "                  raise RuntimeError(f'CDNA4 transpose OOB wave={wi} pc={pc-lib} addr_reg=v{addr_reg} source_lane={src_lane} dest_lane={lane} addr={addr} offset={offset} lds_size={lds_size}')",
+          ]) + "\n"
           src = src.replace(needle, added + needle)
           path.write_text(src)
           PY
