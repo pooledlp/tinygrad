@@ -74,11 +74,15 @@ jobs:
       - name: Run original GEMM correctness tests with emulator skip lifted
         run: |
           python - <<'PY'
-          import unittest
+          import unittest, inspect
           from test.device.amd.test_asm_gemm import TestAsmGEMM
           names = ('test_tiny', 'test_verify_with_numpy')
-          # Diagnostic only: lift the emulator-only @skipIf; no changes to test code or assertions.
-          for name in names: getattr(TestAsmGEMM, name).__unittest_skip__ = False
+          # unittest.skipIf wraps the function with a SkipTest-raising wrapper.
+          # Run the actual original body, preserving its assertions and setUp checks.
+          for name in names:
+            original = inspect.unwrap(getattr(TestAsmGEMM, name))
+            assert original.__name__ == name
+            setattr(TestAsmGEMM, name, original)
           result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(TestAsmGEMM(name) for name in names))
           if not result.wasSuccessful() or result.testsRun != len(names) or result.skipped:
             raise SystemExit(1)
