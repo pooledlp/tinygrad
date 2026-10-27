@@ -31,8 +31,11 @@ jobs:
           deps: testing_unit
           amd: 'true'
           llvm: 'true'
-      - name: Check CDNA4 16-bit LDS transpose regression
-        run: python -m pytest -x -q test/amd/test_emu_memory.py::TestDSCDNA::test_ds_read_b64_tr_b16
+      - name: Check CDNA4 LDS instruction regressions
+        run: >-
+          python -m pytest -x -q
+          test/amd/test_emu_memory.py::TestDSCDNA::test_ds_read_b64_tr_b16
+          test/amd/test_emu_memory.py::TestDSCDNA::test_cdna_lds_above_64k
       - name: Validate gfx950 emulator test suite and report skips
         run: >-
           python -m pytest -n=auto -ra
